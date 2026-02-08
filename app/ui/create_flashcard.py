@@ -6,11 +6,11 @@ from pathlib import Path
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QImage, QKeySequence
 from PySide6.QtWidgets import (
+    QComboBox,
     QFileDialog,
     QFormLayout,
     QHBoxLayout,
     QLabel,
-    QLineEdit,
     QListWidget,
     QListWidgetItem,
     QMessageBox,
@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 
 from app.data.db import IMAGES_DIR
 from app.data.repository import FlashcardRepository
+from app.ui.message_utils import show_info
 
 
 class ImageDropListWidget(QListWidget):
@@ -64,8 +65,14 @@ class CreateFlashcardView(QWidget):
         root = QVBoxLayout()
 
         form = QFormLayout()
-        self.category_input = QLineEdit()
-        self.subcategory_input = QLineEdit()
+        self.category_input = QComboBox()
+        self.category_input.setEditable(True)
+        self.category_input.setInsertPolicy(QComboBox.NoInsert)
+
+        self.subcategory_input = QComboBox()
+        self.subcategory_input.setEditable(True)
+        self.subcategory_input.setInsertPolicy(QComboBox.NoInsert)
+
         self.tier_input = QSpinBox()
         self.tier_input.setRange(1, 5)
         self.tier_input.setValue(1)
@@ -114,8 +121,10 @@ class CreateFlashcardView(QWidget):
         self.paste_image_button.clicked.connect(self._paste_image_from_clipboard)
         self.remove_selected_image_button.clicked.connect(self._remove_selected_image)
         self.save_button.clicked.connect(self._save_flashcard)
+        self.category_input.currentTextChanged.connect(self._refresh_subcategory_options)
 
         self.setFocusPolicy(Qt.StrongFocus)
+        self.refresh_category_options()
 
     def keyPressEvent(self, event) -> None:  # type: ignore[override]
         if event.matches(QKeySequence.Paste):
@@ -152,7 +161,7 @@ class CreateFlashcardView(QWidget):
                 self.image_list.addItem(QListWidgetItem("PASTED IMAGE"))
                 return
 
-        QMessageBox.information(
+        show_info(
             self,
             "No image in clipboard",
             "Clipboard does not currently contain an image.",
@@ -166,8 +175,8 @@ class CreateFlashcardView(QWidget):
         del self._image_items[row]
 
     def _save_flashcard(self) -> None:
-        category = self.category_input.text().strip()
-        subcategory = self.subcategory_input.text().strip()
+        category = self.category_input.currentText().strip()
+        subcategory = self.subcategory_input.currentText().strip()
         tier = int(self.tier_input.value())
         question_text = self.question_input.toPlainText().strip()
         answer_text = self.answer_input.toPlainText().strip()
@@ -210,14 +219,35 @@ class CreateFlashcardView(QWidget):
             image_paths=saved_paths,
         )
 
-        QMessageBox.information(self, "Saved", "Flashcard saved successfully.")
+        show_info(self, "Saved", "Flashcard saved successfully.")
         self._reset_form()
+        self.refresh_category_options()
 
     def _reset_form(self) -> None:
-        self.category_input.clear()
-        self.subcategory_input.clear()
+        self.category_input.setCurrentText("")
+        self.subcategory_input.setCurrentText("")
         self.tier_input.setValue(1)
         self.question_input.clear()
         self.answer_input.clear()
         self.image_list.clear()
         self._image_items.clear()
+
+    def refresh_category_options(self) -> None:
+        current_category = self.category_input.currentText()
+        categories = self.repository.get_categories()
+        self.category_input.blockSignals(True)
+        self.category_input.clear()
+        self.category_input.addItems(categories)
+        self.category_input.setCurrentText(current_category)
+        self.category_input.blockSignals(False)
+        self._refresh_subcategory_options()
+
+    def _refresh_subcategory_options(self) -> None:
+        selected_category = self.category_input.currentText().strip()
+        current_subcategory = self.subcategory_input.currentText()
+        subcategories = self.repository.get_subcategories(selected_category or None)
+        self.subcategory_input.blockSignals(True)
+        self.subcategory_input.clear()
+        self.subcategory_input.addItems(subcategories)
+        self.subcategory_input.setCurrentText(current_subcategory)
+        self.subcategory_input.blockSignals(False)

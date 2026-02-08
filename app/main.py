@@ -40,9 +40,7 @@ class MainWindow(QMainWindow):
         self._show_main_menu()
 
     def _wire_events(self) -> None:
-        self.main_menu_view.create_flashcard_button.clicked.connect(
-            lambda: self.stack.setCurrentWidget(self.create_view)
-        )
+        self.main_menu_view.create_flashcard_button.clicked.connect(self._open_create)
         self.main_menu_view.start_learning_button.clicked.connect(self._open_learning)
         self.main_menu_view.settings_button.clicked.connect(self._open_settings)
         self.main_menu_view.view_flashcards_button.clicked.connect(self._open_view_cards)
@@ -55,6 +53,10 @@ class MainWindow(QMainWindow):
     def _open_learning(self) -> None:
         self.learn_view.populate_filters()
         self.stack.setCurrentWidget(self.learn_view)
+
+    def _open_create(self) -> None:
+        self.create_view.refresh_category_options()
+        self.stack.setCurrentWidget(self.create_view)
 
     def _open_settings(self) -> None:
         self.settings_view.load_settings()

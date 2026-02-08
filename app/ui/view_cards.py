@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QComboBox,
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
     QLabel,
-    QLineEdit,
     QMessageBox,
     QPushButton,
     QSpinBox,
@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.data.repository import FlashcardRepository
+from app.ui.message_utils import show_info
 
 
 class ViewCardsView(QWidget):
@@ -77,8 +78,14 @@ class ViewCardsView(QWidget):
         editor_layout = QVBoxLayout()
 
         form = QFormLayout()
-        self.edit_category_input = QLineEdit()
-        self.edit_subcategory_input = QLineEdit()
+        self.edit_category_input = QComboBox()
+        self.edit_category_input.setEditable(True)
+        self.edit_category_input.setInsertPolicy(QComboBox.NoInsert)
+
+        self.edit_subcategory_input = QComboBox()
+        self.edit_subcategory_input.setEditable(True)
+        self.edit_subcategory_input.setInsertPolicy(QComboBox.NoInsert)
+
         self.edit_tier_input = QSpinBox()
         self.edit_tier_input.setRange(1, 5)
         self.edit_question_input = QTextEdit()
@@ -115,9 +122,11 @@ class ViewCardsView(QWidget):
         self.cards_table.itemSelectionChanged.connect(self._on_card_selection_changed)
         self.save_card_button.clicked.connect(self.save_selected_card)
         self.delete_card_button.clicked.connect(self.delete_selected_card)
+        self.edit_category_input.currentTextChanged.connect(self._refresh_editor_subcategories)
 
         self.refresh_statistics()
         self._set_editor_enabled(False)
+        self._refresh_editor_categories()
 
     def refresh_statistics(self) -> None:
         self.stats_tree.clear()
@@ -149,11 +158,12 @@ class ViewCardsView(QWidget):
                 category_item.addChild(sub_item)
 
         self.stats_tree.expandAll()
+        self._refresh_editor_categories()
 
     def open_selected_scope(self) -> None:
         item = self.stats_tree.currentItem()
         if item is None:
-            QMessageBox.information(self, "No selection", "Please select a category or subcategory.")
+            show_info(self, "No selection", "Please select a category or subcategory.")
             return
 
         data = item.data(0, Qt.UserRole)
@@ -204,8 +214,8 @@ class ViewCardsView(QWidget):
         row = selected_rows[0].row()
         card = self.current_cards[row]
         self.current_card_id = int(card["id"])
-        self.edit_category_input.setText(card["category"])
-        self.edit_subcategory_input.setText(card["subcategory"])
+        self._refresh_editor_categories(card["category"])
+        self._refresh_editor_subcategories(card["category"], card["subcategory"])
         self.edit_tier_input.setValue(int(card["tier"]))
         self.edit_question_input.setPlainText(card["question_text"])
         self.edit_answer_input.setPlainText(card["answer_text"])
@@ -215,8 +225,8 @@ class ViewCardsView(QWidget):
         if self.current_card_id is None:
             return
 
-        category = self.edit_category_input.text().strip()
-        subcategory = self.edit_subcategory_input.text().strip()
+        category = self.edit_category_input.currentText().strip()
+        subcategory = self.edit_subcategory_input.currentText().strip()
         tier = int(self.edit_tier_input.value())
         question = self.edit_question_input.toPlainText().strip()
         answer = self.edit_answer_input.toPlainText().strip()
@@ -236,7 +246,7 @@ class ViewCardsView(QWidget):
             question_text=question,
             answer_text=answer,
         )
-        QMessageBox.information(self, "Saved", "Card updated.")
+        show_info(self, "Saved", "Card updated.")
         self.refresh_statistics()
         self._load_cards_for_current_scope()
 
@@ -260,7 +270,7 @@ class ViewCardsView(QWidget):
     def delete_selected_scope(self) -> None:
         item = self.stats_tree.currentItem()
         if item is None:
-            QMessageBox.information(self, "No selection", "Please select a category or subcategory.")
+            show_info(self, "No selection", "Please select a category or subcategory.")
             return
         data = item.data(0, Qt.UserRole)
         if not data:
@@ -278,7 +288,7 @@ class ViewCardsView(QWidget):
             return
 
         deleted = self.repository.delete_scope(category=category, subcategory=subcategory)
-        QMessageBox.information(self, "Deleted", f"Deleted {deleted} cards from selected {scope_type}.")
+        show_info(self, "Deleted", f"Deleted {deleted} cards from selected {scope_type}.")
         self.current_category = None
         self.current_subcategory = None
         self.current_cards = []
@@ -292,7 +302,7 @@ class ViewCardsView(QWidget):
     def reset_selected_scope_tier(self) -> None:
         item = self.stats_tree.currentItem()
         if item is None:
-            QMessageBox.information(self, "No selection", "Please select a category or subcategory.")
+            show_info(self, "No selection", "Please select a category or subcategory.")
             return
         data = item.data(0, Qt.UserRole)
         if not data:
@@ -300,14 +310,14 @@ class ViewCardsView(QWidget):
 
         scope_type, category, subcategory = data
         updated = self.repository.reset_scope_tier_to_one(category=category, subcategory=subcategory)
-        QMessageBox.information(self, "Updated", f"Reset tier to 1 for {updated} cards in selected {scope_type}.")
+        show_info(self, "Updated", f"Reset tier to 1 for {updated} cards in selected {scope_type}.")
         self.refresh_statistics()
         if self.current_category == category and self.current_subcategory == subcategory:
             self._load_cards_for_current_scope()
 
     def _clear_editor(self) -> None:
-        self.edit_category_input.clear()
-        self.edit_subcategory_input.clear()
+        self.edit_category_input.setCurrentText("")
+        self.edit_subcategory_input.setCurrentText("")
         self.edit_tier_input.setValue(1)
         self.edit_question_input.clear()
         self.edit_answer_input.clear()
@@ -320,5 +330,31 @@ class ViewCardsView(QWidget):
         self.edit_answer_input.setEnabled(enabled)
         self.save_card_button.setEnabled(enabled)
         self.delete_card_button.setEnabled(enabled)
+
+    def _refresh_editor_categories(self, selected: str = "") -> None:
+        current = selected or self.edit_category_input.currentText()
+        categories = self.repository.get_categories()
+        self.edit_category_input.blockSignals(True)
+        self.edit_category_input.clear()
+        self.edit_category_input.addItems(categories)
+        self.edit_category_input.setCurrentText(current)
+        self.edit_category_input.blockSignals(False)
+        self._refresh_editor_subcategories(current)
+
+    def _refresh_editor_subcategories(
+        self,
+        category: str | None = None,
+        selected: str = "",
+    ) -> None:
+        chosen_category = (category if category is not None else self.edit_category_input.currentText()).strip()
+        current = selected or self.edit_subcategory_input.currentText()
+        subcategories = self.repository.get_subcategories(chosen_category or None)
+        self.edit_subcategory_input.blockSignals(True)
+        self.edit_subcategory_input.clear()
+        self.edit_subcategory_input.addItems(subcategories)
+        self.edit_subcategory_input.setCurrentText(current)
+        self.edit_subcategory_input.blockSignals(False)
+
+
 
 

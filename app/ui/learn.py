@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 
 from app.data.repository import FlashcardRepository
 from app.services.learning import LearningSession
+from app.ui.message_utils import show_info
 
 
 class LearnView(QWidget):
@@ -140,7 +141,7 @@ class LearnView(QWidget):
         )
 
         if not cards:
-            QMessageBox.information(self, "No cards", "No flashcards match your filters.")
+            show_info(self, "No cards", "No flashcards match your filters.")
             self.session = None
             self.current_card = None
             self.loop_count = 0

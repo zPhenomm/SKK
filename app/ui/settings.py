@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.data.repository import FlashcardRepository
+from app.ui.message_utils import show_info
 
 
 class SettingsView(QWidget):
@@ -55,4 +56,4 @@ class SettingsView(QWidget):
         down = int(self.tier_down_threshold_input.value())
         self.repository.set_setting_int("tier_up_threshold", up)
         self.repository.set_setting_int("tier_down_threshold", down)
-        QMessageBox.information(self, "Saved", "Learning thresholds saved.")
+        show_info(self, "Saved", "Learning thresholds saved.")

@@ -24,24 +24,6 @@ def get_connection() -> sqlite3.Connection:
 
 def initialize_database() -> None:
     with get_connection() as conn:
-        # If legacy schema is detected, reset to a clean DB schema for current MVP.
-        table_exists = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='flashcards'"
-        ).fetchone()
-        if table_exists:
-            existing_columns = {
-                row["name"]
-                for row in conn.execute("PRAGMA table_info(flashcards)").fetchall()
-            }
-            if "text_content" in existing_columns:
-                conn.executescript(
-                    """
-                    DROP TABLE IF EXISTS flashcard_images;
-                    DROP TABLE IF EXISTS flashcards;
-                    DROP TABLE IF EXISTS app_settings;
-                    """
-                )
-
         conn.executescript(
             """
             CREATE TABLE IF NOT EXISTS flashcards (
