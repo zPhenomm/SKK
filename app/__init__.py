@@ -1,0 +1,1 @@
+"""Flashcard desktop app package."""
