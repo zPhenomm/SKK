@@ -28,7 +28,7 @@ class MainWindow(QMainWindow):
         self.create_view = CreateFlashcardView(self.repository)
         self.learn_view = LearnView(self.repository)
         self.settings_view = SettingsView(self.repository)
-        self.view_cards_view = ViewCardsView()
+        self.view_cards_view = ViewCardsView(self.repository)
 
         self.stack.addWidget(self.main_menu_view)
         self.stack.addWidget(self.create_view)
@@ -45,9 +45,7 @@ class MainWindow(QMainWindow):
         )
         self.main_menu_view.start_learning_button.clicked.connect(self._open_learning)
         self.main_menu_view.settings_button.clicked.connect(self._open_settings)
-        self.main_menu_view.view_flashcards_button.clicked.connect(
-            lambda: self.stack.setCurrentWidget(self.view_cards_view)
-        )
+        self.main_menu_view.view_flashcards_button.clicked.connect(self._open_view_cards)
 
         self.create_view.back_button.clicked.connect(self._show_main_menu)
         self.learn_view.back_button.clicked.connect(self._show_main_menu)
@@ -61,6 +59,10 @@ class MainWindow(QMainWindow):
     def _open_settings(self) -> None:
         self.settings_view.load_settings()
         self.stack.setCurrentWidget(self.settings_view)
+
+    def _open_view_cards(self) -> None:
+        self.view_cards_view.refresh_statistics()
+        self.stack.setCurrentWidget(self.view_cards_view)
 
     def _show_main_menu(self) -> None:
         self.stack.setCurrentWidget(self.main_menu_view)

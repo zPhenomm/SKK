@@ -187,3 +187,166 @@ class FlashcardRepository:
                     flashcard_id,
                 ),
             )
+
+    def get_category_stats(self) -> list[dict[str, Any]]:
+        with get_connection() as conn:
+            category_rows = conn.execute(
+                """
+                SELECT
+                    category,
+                    COUNT(*) AS card_count,
+                    GROUP_CONCAT(DISTINCT tier) AS tiers
+                FROM flashcards
+                GROUP BY category
+                ORDER BY category
+                """
+            ).fetchall()
+
+            sub_rows = conn.execute(
+                """
+                SELECT
+                    category,
+                    subcategory,
+                    COUNT(*) AS card_count,
+                    GROUP_CONCAT(DISTINCT tier) AS tiers
+                FROM flashcards
+                GROUP BY category, subcategory
+                ORDER BY category, subcategory
+                """
+            ).fetchall()
+
+        sub_map: dict[str, list[dict[str, Any]]] = {}
+        for row in sub_rows:
+            sub_map.setdefault(row["category"], []).append(
+                {
+                    "subcategory": row["subcategory"],
+                    "card_count": int(row["card_count"]),
+                    "tiers": self._parse_tiers(row["tiers"]),
+                }
+            )
+
+        result: list[dict[str, Any]] = []
+        for row in category_rows:
+            category = row["category"]
+            result.append(
+                {
+                    "category": category,
+                    "card_count": int(row["card_count"]),
+                    "tiers": self._parse_tiers(row["tiers"]),
+                    "subcategories": sub_map.get(category, []),
+                }
+            )
+        return result
+
+    def get_cards_for_scope(
+        self,
+        category: str | None,
+        subcategory: str | None,
+    ) -> list[dict[str, Any]]:
+        clauses: list[str] = []
+        params: list[Any] = []
+
+        if category:
+            clauses.append("category = ?")
+            params.append(category)
+        if subcategory:
+            clauses.append("subcategory = ?")
+            params.append(subcategory)
+
+        where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+
+        with get_connection() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT id, category, subcategory, tier, question_text, answer_text
+                FROM flashcards
+                {where_sql}
+                ORDER BY id ASC
+                """,
+                params,
+            ).fetchall()
+
+        return [dict(row) for row in rows]
+
+    def update_flashcard(
+        self,
+        flashcard_id: int,
+        category: str,
+        subcategory: str,
+        tier: int,
+        question_text: str,
+        answer_text: str,
+    ) -> None:
+        with get_connection() as conn:
+            conn.execute(
+                """
+                UPDATE flashcards
+                SET category = ?, subcategory = ?, tier = ?, question_text = ?, answer_text = ?
+                WHERE id = ?
+                """,
+                (
+                    category.strip(),
+                    subcategory.strip(),
+                    int(tier),
+                    question_text.strip(),
+                    answer_text.strip(),
+                    int(flashcard_id),
+                ),
+            )
+
+    def delete_flashcard(self, flashcard_id: int) -> None:
+        with get_connection() as conn:
+            conn.execute("DELETE FROM flashcards WHERE id = ?", (int(flashcard_id),))
+
+    def delete_scope(self, category: str, subcategory: str | None = None) -> int:
+        with get_connection() as conn:
+            if subcategory is None:
+                cursor = conn.execute(
+                    "DELETE FROM flashcards WHERE category = ?",
+                    (category,),
+                )
+            else:
+                cursor = conn.execute(
+                    "DELETE FROM flashcards WHERE category = ? AND subcategory = ?",
+                    (category, subcategory),
+                )
+            return int(cursor.rowcount)
+
+    def reset_scope_tier_to_one(self, category: str, subcategory: str | None = None) -> int:
+        with get_connection() as conn:
+            if subcategory is None:
+                cursor = conn.execute(
+                    """
+                    UPDATE flashcards
+                    SET tier = 1, correct_streak = 0, wrong_streak = 0
+                    WHERE category = ?
+                    """,
+                    (category,),
+                )
+            else:
+                cursor = conn.execute(
+                    """
+                    UPDATE flashcards
+                    SET tier = 1, correct_streak = 0, wrong_streak = 0
+                    WHERE category = ? AND subcategory = ?
+                    """,
+                    (category, subcategory),
+                )
+            return int(cursor.rowcount)
+
+    @staticmethod
+    def _parse_tiers(raw: Any) -> list[int]:
+        if raw is None:
+            return []
+        tiers: list[int] = []
+        for chunk in str(raw).split(","):
+            chunk = chunk.strip()
+            if not chunk:
+                continue
+            try:
+                tiers.append(int(chunk))
+            except ValueError:
+                continue
+        return sorted(set(tiers))
+
+

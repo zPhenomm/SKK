@@ -24,6 +24,24 @@ def get_connection() -> sqlite3.Connection:
 
 def initialize_database() -> None:
     with get_connection() as conn:
+        # If legacy schema is detected, reset to a clean DB schema for current MVP.
+        table_exists = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='flashcards'"
+        ).fetchone()
+        if table_exists:
+            existing_columns = {
+                row["name"]
+                for row in conn.execute("PRAGMA table_info(flashcards)").fetchall()
+            }
+            if "text_content" in existing_columns:
+                conn.executescript(
+                    """
+                    DROP TABLE IF EXISTS flashcard_images;
+                    DROP TABLE IF EXISTS flashcards;
+                    DROP TABLE IF EXISTS app_settings;
+                    """
+                )
+
         conn.executescript(
             """
             CREATE TABLE IF NOT EXISTS flashcards (
@@ -54,35 +72,6 @@ def initialize_database() -> None:
             );
             """
         )
-
-        # Lightweight migration support for existing local DBs
-        columns = {
-            row["name"]
-            for row in conn.execute("PRAGMA table_info(flashcards)").fetchall()
-        }
-
-        if "question_text" not in columns:
-            conn.execute(
-                "ALTER TABLE flashcards ADD COLUMN question_text TEXT NOT NULL DEFAULT ''"
-            )
-        if "answer_text" not in columns:
-            conn.execute(
-                "ALTER TABLE flashcards ADD COLUMN answer_text TEXT NOT NULL DEFAULT ''"
-            )
-        if "wrong_streak" not in columns:
-            conn.execute(
-                "ALTER TABLE flashcards ADD COLUMN wrong_streak INTEGER NOT NULL DEFAULT 0"
-            )
-
-        # Backfill from old schema if needed
-        if "text_content" in columns:
-            conn.execute(
-                """
-                UPDATE flashcards
-                SET question_text = COALESCE(NULLIF(question_text, ''), text_content),
-                    answer_text = COALESCE(NULLIF(answer_text, ''), text_content)
-                """
-            )
 
         conn.execute(
             "INSERT OR IGNORE INTO app_settings (key, value) VALUES ('tier_up_threshold', '3')"

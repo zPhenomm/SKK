@@ -7,8 +7,8 @@ A lightweight desktop flashcard app built with **PySide6 + SQLite**.
 - Main menu with:
   - Start learning
   - Create flashcard
-  - Settings (placeholder)
-  - View flashcards (placeholder)
+  - Settings
+  - View flashcards
 - Create flashcard screen:
   - Category
   - Subcategory
@@ -28,6 +28,14 @@ A lightweight desktop flashcard app built with **PySide6 + SQLite**.
 - Settings screen:
   - Configure how many correct answers are required to move a card up a tier
   - Configure how many wrong answers are required to move a card down a tier
+- View flashcards screen:
+  - Statistics overview by category/subcategory
+  - Card counts and tiers shown per scope
+  - Drill down into category/subcategory to list all cards
+  - Edit card fields (question, answer, category, subcategory, tier)
+  - Delete a single card
+  - Delete entire category or subcategory (all cards inside)
+  - Reset all cards in selected category/subcategory to tier 1
 
 ## Tech stack
 
@@ -58,4 +66,4 @@ On first launch, the app creates:
 ## Notes
 
 - This is designed for **personal/local use**.
-- Settings and view-cards screens are placeholders for later expansion.
+- Settings and view-cards are now functional MVP screens and can be expanded further.
