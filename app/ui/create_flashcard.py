@@ -70,14 +70,19 @@ class CreateFlashcardView(QWidget):
         self.tier_input.setRange(1, 5)
         self.tier_input.setValue(1)
 
-        self.text_input = QTextEdit()
-        self.text_input.setPlaceholderText("Enter flashcard text...")
-        self.text_input.setMinimumHeight(140)
+        self.question_input = QTextEdit()
+        self.question_input.setPlaceholderText("Enter question text...")
+        self.question_input.setMinimumHeight(100)
+
+        self.answer_input = QTextEdit()
+        self.answer_input.setPlaceholderText("Enter answer text...")
+        self.answer_input.setMinimumHeight(140)
 
         form.addRow("Category:", self.category_input)
         form.addRow("Subcategory:", self.subcategory_input)
         form.addRow("Tier:", self.tier_input)
-        form.addRow("Text:", self.text_input)
+        form.addRow("Question:", self.question_input)
+        form.addRow("Answer:", self.answer_input)
 
         root.addLayout(form)
 
@@ -164,13 +169,17 @@ class CreateFlashcardView(QWidget):
         category = self.category_input.text().strip()
         subcategory = self.subcategory_input.text().strip()
         tier = int(self.tier_input.value())
-        text_content = self.text_input.toPlainText().strip()
+        question_text = self.question_input.toPlainText().strip()
+        answer_text = self.answer_input.toPlainText().strip()
 
         if not category or not subcategory:
             QMessageBox.warning(self, "Missing data", "Category and subcategory are required.")
             return
-        if not text_content:
-            QMessageBox.warning(self, "Missing data", "Text content is required.")
+        if not question_text:
+            QMessageBox.warning(self, "Missing data", "Question text is required.")
+            return
+        if not answer_text:
+            QMessageBox.warning(self, "Missing data", "Answer text is required.")
             return
 
         IMAGES_DIR.mkdir(parents=True, exist_ok=True)
@@ -196,7 +205,8 @@ class CreateFlashcardView(QWidget):
             category=category,
             subcategory=subcategory,
             tier=tier,
-            text_content=text_content,
+            question_text=question_text,
+            answer_text=answer_text,
             image_paths=saved_paths,
         )
 
@@ -207,6 +217,7 @@ class CreateFlashcardView(QWidget):
         self.category_input.clear()
         self.subcategory_input.clear()
         self.tier_input.setValue(1)
-        self.text_input.clear()
+        self.question_input.clear()
+        self.answer_input.clear()
         self.image_list.clear()
         self._image_items.clear()

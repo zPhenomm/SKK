@@ -27,6 +27,7 @@ class LearnView(QWidget):
         self.repository = repository
         self.session: LearningSession | None = None
         self.current_card: dict[str, Any] | None = None
+        self.answer_visible = False
 
         root = QVBoxLayout()
 
@@ -55,11 +56,17 @@ class LearnView(QWidget):
         self.card_meta_label = QLabel("")
         root.addWidget(self.card_meta_label)
 
-        self.card_text = QTextEdit()
-        self.card_text.setReadOnly(True)
-        self.card_text.setPlaceholderText("Card text will appear here...")
-        self.card_text.setMinimumHeight(140)
-        root.addWidget(self.card_text)
+        self.question_text = QTextEdit()
+        self.question_text.setReadOnly(True)
+        self.question_text.setPlaceholderText("Question will appear here...")
+        self.question_text.setMinimumHeight(120)
+        root.addWidget(self.question_text)
+
+        self.answer_text = QTextEdit()
+        self.answer_text.setReadOnly(True)
+        self.answer_text.setPlaceholderText("Answer is hidden. Click 'Show answer'.")
+        self.answer_text.setMinimumHeight(120)
+        root.addWidget(self.answer_text)
 
         self.image_label = QLabel("")
         self.image_label.setMinimumHeight(220)
@@ -67,8 +74,10 @@ class LearnView(QWidget):
         root.addWidget(self.image_label)
 
         answer_actions = QHBoxLayout()
+        self.show_answer_button = QPushButton("Show answer")
         self.correct_button = QPushButton("Correct")
         self.wrong_button = QPushButton("Wrong")
+        answer_actions.addWidget(self.show_answer_button)
         answer_actions.addWidget(self.correct_button)
         answer_actions.addWidget(self.wrong_button)
         root.addLayout(answer_actions)
@@ -77,6 +86,7 @@ class LearnView(QWidget):
 
         self.start_button.clicked.connect(self.start_learning)
         self.refresh_button.clicked.connect(self.populate_filters)
+        self.show_answer_button.clicked.connect(self.show_answer)
         self.correct_button.clicked.connect(lambda: self.answer_current(True))
         self.wrong_button.clicked.connect(lambda: self.answer_current(False))
         self.category_combo.currentTextChanged.connect(self._on_category_changed)
@@ -136,6 +146,14 @@ class LearnView(QWidget):
         )
         self._show_next_card()
 
+    def show_answer(self) -> None:
+        if self.current_card is None:
+            return
+        self.answer_visible = True
+        self.answer_text.setPlainText(self.current_card.get("answer_text", ""))
+        self._display_first_image(self.current_card.get("images", []))
+        self.show_answer_button.setEnabled(False)
+
     def _show_next_card(self) -> None:
         if self.session is None:
             return
@@ -149,14 +167,18 @@ class LearnView(QWidget):
             return
 
         self.current_card = next_card
+        self.answer_visible = False
         self.progress_label.setText(
             f"Card {self.session.current_position} / {self.session.total}"
         )
         self.card_meta_label.setText(
             f"Category: {next_card['category']} | Subcategory: {next_card['subcategory']} | Tier: {next_card['tier']}"
         )
-        self.card_text.setPlainText(next_card.get("text_content", ""))
-        self._display_first_image(next_card.get("images", []))
+        self.question_text.setPlainText(next_card.get("question_text", ""))
+        self.answer_text.setPlainText("Answer is hidden. Click 'Show answer'.")
+        self.image_label.setText("Answer images are hidden. Click 'Show answer'.")
+        self.image_label.setPixmap(QPixmap())
+        self.show_answer_button.setEnabled(True)
 
     def _display_first_image(self, image_paths: list[str]) -> None:
         if not image_paths:
@@ -186,11 +208,13 @@ class LearnView(QWidget):
 
     def resizeEvent(self, event) -> None:  # type: ignore[override]
         super().resizeEvent(event)
-        if self.current_card:
+        if self.current_card and self.answer_visible:
             self._display_first_image(self.current_card.get("images", []))
 
     def _clear_card_display(self) -> None:
         self.card_meta_label.setText("")
-        self.card_text.clear()
-        self.image_label.setText("")
+        self.question_text.clear()
+        self.answer_text.setPlainText("Answer is hidden. Click 'Show answer'.")
+        self.image_label.setText("Answer images are hidden. Click 'Show answer'.")
         self.image_label.setPixmap(QPixmap())
+        self.show_answer_button.setEnabled(False)

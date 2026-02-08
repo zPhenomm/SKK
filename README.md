@@ -13,11 +13,14 @@ A lightweight desktop flashcard app built with **PySide6 + SQLite**.
   - Category
   - Subcategory
   - Tier (1-5)
-  - Text content
+  - Question text
+  - Answer text
   - Image support (drag & drop files or paste from clipboard)
 - Learning screen:
   - Filter by category, subcategory, tier
   - Random flashcards from matching filters
+  - Shows question first
+  - "Show answer" button reveals answer text + answer images
   - Correct/Wrong buttons
   - Tier progression logic:
     - Correct several times (default 3 streak) -> tier up
