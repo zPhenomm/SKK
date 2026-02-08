@@ -23,8 +23,11 @@ A lightweight desktop flashcard app built with **PySide6 + SQLite**.
   - "Show answer" button reveals answer text + answer images
   - Correct/Wrong buttons
   - Tier progression logic:
-    - Correct several times (default 3 streak) -> tier up
-    - Wrong -> tier down
+    - Correct streak threshold -> tier up
+    - Wrong streak threshold -> tier down
+- Settings screen:
+  - Configure how many correct answers are required to move a card up a tier
+  - Configure how many wrong answers are required to move a card down a tier
 
 ## Tech stack
 

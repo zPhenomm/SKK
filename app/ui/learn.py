@@ -28,6 +28,12 @@ class LearnView(QWidget):
         self.session: LearningSession | None = None
         self.current_card: dict[str, Any] | None = None
         self.answer_visible = False
+        self.tier_up_threshold = 3
+        self.tier_down_threshold = 1
+        self.active_category: str | None = None
+        self.active_subcategory: str | None = None
+        self.active_tier: int | None = None
+        self.loop_count = 0
 
         root = QVBoxLayout()
 
@@ -117,24 +123,32 @@ class LearnView(QWidget):
         self.subcategory_combo.addItems(subcategories)
 
     def start_learning(self) -> None:
+        self.load_threshold_settings()
+
         category = self.category_combo.currentText()
         subcategory = self.subcategory_combo.currentText()
         tier_text = self.tier_combo.currentText()
 
+        self.active_category = None if category == "Any" else category
+        self.active_subcategory = None if subcategory == "Any" else subcategory
+        self.active_tier = None if tier_text == "Any" else int(tier_text)
+
         cards = self.repository.get_filtered_flashcards(
-            category=None if category == "Any" else category,
-            subcategory=None if subcategory == "Any" else subcategory,
-            tier=None if tier_text == "Any" else int(tier_text),
+            category=self.active_category,
+            subcategory=self.active_subcategory,
+            tier=self.active_tier,
         )
 
         if not cards:
             QMessageBox.information(self, "No cards", "No flashcards match your filters.")
             self.session = None
             self.current_card = None
+            self.loop_count = 0
             self._clear_card_display()
             return
 
         self.session = LearningSession(cards)
+        self.loop_count = 1
         self._show_next_card()
 
     def answer_current(self, is_correct: bool) -> None:
@@ -143,8 +157,18 @@ class LearnView(QWidget):
         self.repository.update_after_answer(
             flashcard_id=int(self.current_card["id"]),
             is_correct=is_correct,
+            streak_to_tier_up=self.tier_up_threshold,
+            streak_to_tier_down=self.tier_down_threshold,
         )
         self._show_next_card()
+
+    def load_threshold_settings(self) -> None:
+        self.tier_up_threshold = max(
+            1, self.repository.get_setting_int("tier_up_threshold", 3)
+        )
+        self.tier_down_threshold = max(
+            1, self.repository.get_setting_int("tier_down_threshold", 1)
+        )
 
     def show_answer(self) -> None:
         if self.current_card is None:
@@ -160,16 +184,22 @@ class LearnView(QWidget):
 
         next_card = self.session.next_card()
         if next_card is None:
-            QMessageBox.information(self, "Done", "Learning session completed.")
-            self.current_card = None
-            self.progress_label.setText("Session finished")
-            self._clear_card_display()
-            return
+            if not self._refresh_loop_session():
+                self.current_card = None
+                self.progress_label.setText("No matching cards left for current filters")
+                self._clear_card_display()
+                return
+            next_card = self.session.next_card() if self.session else None
+            if next_card is None:
+                self.current_card = None
+                self.progress_label.setText("No matching cards left for current filters")
+                self._clear_card_display()
+                return
 
         self.current_card = next_card
         self.answer_visible = False
         self.progress_label.setText(
-            f"Card {self.session.current_position} / {self.session.total}"
+            f"Loop {self.loop_count} • Card {self.session.current_position} / {self.session.total}"
         )
         self.card_meta_label.setText(
             f"Category: {next_card['category']} | Subcategory: {next_card['subcategory']} | Tier: {next_card['tier']}"
@@ -179,6 +209,19 @@ class LearnView(QWidget):
         self.image_label.setText("Answer images are hidden. Click 'Show answer'.")
         self.image_label.setPixmap(QPixmap())
         self.show_answer_button.setEnabled(True)
+
+    def _refresh_loop_session(self) -> bool:
+        cards = self.repository.get_filtered_flashcards(
+            category=self.active_category,
+            subcategory=self.active_subcategory,
+            tier=self.active_tier,
+        )
+        if not cards:
+            self.session = None
+            return False
+        self.session = LearningSession(cards)
+        self.loop_count += 1
+        return True
 
     def _display_first_image(self, image_paths: list[str]) -> None:
         if not image_paths:
