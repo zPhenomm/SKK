@@ -12,6 +12,8 @@ from PySide6.QtWidgets import (
     QLabel,
     QMessageBox,
     QPushButton,
+    QScrollArea,
+    QSizePolicy,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -75,10 +77,16 @@ class LearnView(QWidget):
         self.answer_text.setMinimumHeight(120)
         root.addWidget(self.answer_text)
 
+        self.image_scroll = QScrollArea()
+        self.image_scroll.setWidgetResizable(True)
+        self.image_scroll.setMinimumHeight(220)
+        self.image_scroll.setStyleSheet("border:1px solid #888;")
+
         self.image_label = QLabel("")
-        self.image_label.setMinimumHeight(220)
-        self.image_label.setStyleSheet("border:1px solid #888; padding:6px;")
-        root.addWidget(self.image_label)
+        self.image_label.setAlignment(Qt.AlignCenter)
+        self.image_label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
+        self.image_scroll.setWidget(self.image_label)
+        root.addWidget(self.image_scroll)
 
         answer_actions = QHBoxLayout()
         self.show_answer_button = QPushButton("Show answer")
@@ -242,8 +250,9 @@ class LearnView(QWidget):
             self.image_label.setPixmap(QPixmap())
             return
 
+        viewport_size = self.image_scroll.viewport().size()
         scaled = pixmap.scaled(
-            self.image_label.size(),
+            viewport_size,
             aspectMode=Qt.KeepAspectRatio,
             mode=Qt.SmoothTransformation,
         )
