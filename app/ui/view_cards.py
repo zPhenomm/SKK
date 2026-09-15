@@ -1,6 +1,4 @@
-from __future__ import annotations
-
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QSignalBlocker, Qt
 from PySide6.QtWidgets import (
     QComboBox,
     QFormLayout,
@@ -312,7 +310,10 @@ class ViewCardsView(QWidget):
         updated = self.repository.reset_scope_tier_to_one(category=category, subcategory=subcategory)
         show_info(self, "Updated", f"Reset tier to 1 for {updated} cards in selected {scope_type}.")
         self.refresh_statistics()
-        if self.current_category == category and self.current_subcategory == subcategory:
+        if self.current_category == category and (
+            subcategory is None or self.current_subcategory is None
+            or self.current_subcategory == subcategory
+        ):
             self._load_cards_for_current_scope()
 
     def _clear_editor(self) -> None:
@@ -334,11 +335,11 @@ class ViewCardsView(QWidget):
     def _refresh_editor_categories(self, selected: str = "") -> None:
         current = selected or self.edit_category_input.currentText()
         categories = self.repository.get_categories()
-        self.edit_category_input.blockSignals(True)
-        self.edit_category_input.clear()
-        self.edit_category_input.addItems(categories)
-        self.edit_category_input.setCurrentText(current)
-        self.edit_category_input.blockSignals(False)
+        with QSignalBlocker(self.edit_category_input):
+            self.edit_category_input.clear()
+            self.edit_category_input.addItems(categories)
+            self.edit_category_input.setCurrentText(current)
+
         self._refresh_editor_subcategories(current)
 
     def _refresh_editor_subcategories(
@@ -349,12 +350,7 @@ class ViewCardsView(QWidget):
         chosen_category = (category if category is not None else self.edit_category_input.currentText()).strip()
         current = selected or self.edit_subcategory_input.currentText()
         subcategories = self.repository.get_subcategories(chosen_category or None)
-        self.edit_subcategory_input.blockSignals(True)
-        self.edit_subcategory_input.clear()
-        self.edit_subcategory_input.addItems(subcategories)
-        self.edit_subcategory_input.setCurrentText(current)
-        self.edit_subcategory_input.blockSignals(False)
-
-
-
-
+        with QSignalBlocker(self.edit_subcategory_input):
+            self.edit_subcategory_input.clear()
+            self.edit_subcategory_input.addItems(subcategories)
+            self.edit_subcategory_input.setCurrentText(current)

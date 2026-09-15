@@ -1,19 +1,12 @@
-from __future__ import annotations
-
-from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QPixmap
+from PySide6.QtCore import QSignalBlocker
 from PySide6.QtWidgets import (
     QComboBox,
     QFormLayout,
     QHBoxLayout,
     QLabel,
-    QMessageBox,
     QPushButton,
-    QScrollArea,
-    QSizePolicy,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -22,6 +15,7 @@ from PySide6.QtWidgets import (
 from app.data.repository import FlashcardRepository
 from app.services.learning import LearningSession
 from app.ui.message_utils import show_info
+from app.ui.image_viewer import ImagePreviewStrip, ImageViewer
 
 
 class LearnView(QWidget):
@@ -37,6 +31,7 @@ class LearnView(QWidget):
         self.active_subcategory: str | None = None
         self.active_tier: int | None = None
         self.loop_count = 0
+        self.image_viewer: ImageViewer | None = None
 
         root = QVBoxLayout()
 
@@ -77,16 +72,13 @@ class LearnView(QWidget):
         self.answer_text.setMinimumHeight(120)
         root.addWidget(self.answer_text)
 
-        self.image_scroll = QScrollArea()
-        self.image_scroll.setWidgetResizable(True)
-        self.image_scroll.setMinimumHeight(220)
-        self.image_scroll.setStyleSheet("border:1px solid #888;")
-
-        self.image_label = QLabel("")
-        self.image_label.setAlignment(Qt.AlignCenter)
-        self.image_label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
-        self.image_scroll.setWidget(self.image_label)
+        self.image_scroll = ImagePreviewStrip()
+        self.image_scroll.image_clicked.connect(self.open_images)
         root.addWidget(self.image_scroll)
+        self.open_images_button = QPushButton("Open images")
+        self.open_images_button.clicked.connect(lambda: self.open_images(0))
+        self.open_images_button.setEnabled(False)
+        root.addWidget(self.open_images_button)
 
         answer_actions = QHBoxLayout()
         self.show_answer_button = QPushButton("Show answer")
@@ -104,43 +96,39 @@ class LearnView(QWidget):
         self.show_answer_button.clicked.connect(self.show_answer)
         self.correct_button.clicked.connect(lambda: self.answer_current(True))
         self.wrong_button.clicked.connect(lambda: self.answer_current(False))
-        self.category_combo.currentTextChanged.connect(self._on_category_changed)
+        self.category_combo.currentIndexChanged.connect(self._on_category_changed)
 
         self.populate_filters()
+        self._clear_card_display()
+
+    @staticmethod
+    def _populate_combo(combo: QComboBox, values: list) -> None:
+        selected = combo.currentData()
+        with QSignalBlocker(combo):
+            combo.clear()
+            combo.addItem("Any", None)
+            for value in values:
+                combo.addItem(str(value), value)
+            combo.setCurrentIndex(max(0, combo.findData(selected)))
 
     def populate_filters(self) -> None:
-        categories = self.repository.get_categories()
-        self.category_combo.clear()
-        self.category_combo.addItem("Any")
-        self.category_combo.addItems(categories)
+        self._populate_combo(self.category_combo, self.repository.get_categories())
+        self._populate_subcategories(self.category_combo.currentData())
+        self._populate_combo(self.tier_combo, list(range(1, 6)))
 
-        self._populate_subcategories(None)
-
-        self.tier_combo.clear()
-        self.tier_combo.addItem("Any")
-        for tier in range(1, 6):
-            self.tier_combo.addItem(str(tier))
-
-    def _on_category_changed(self, _text: str) -> None:
-        selected = self.category_combo.currentText()
-        self._populate_subcategories(None if selected == "Any" else selected)
+    def _on_category_changed(self, _index: int) -> None:
+        self._populate_subcategories(self.category_combo.currentData())
 
     def _populate_subcategories(self, category: str | None) -> None:
-        subcategories = self.repository.get_subcategories(category)
-        self.subcategory_combo.clear()
-        self.subcategory_combo.addItem("Any")
-        self.subcategory_combo.addItems(subcategories)
+        self._populate_combo(self.subcategory_combo, self.repository.get_subcategories(category))
 
     def start_learning(self) -> None:
         self.load_threshold_settings()
 
-        category = self.category_combo.currentText()
-        subcategory = self.subcategory_combo.currentText()
-        tier_text = self.tier_combo.currentText()
-
-        self.active_category = None if category == "Any" else category
-        self.active_subcategory = None if subcategory == "Any" else subcategory
-        self.active_tier = None if tier_text == "Any" else int(tier_text)
+        self.active_category = self.category_combo.currentData()
+        self.active_subcategory = self.subcategory_combo.currentData()
+        self.active_tier = self.tier_combo.currentData()
+        self._clear_card_display()
 
         cards = self.repository.get_filtered_flashcards(
             category=self.active_category,
@@ -153,6 +141,7 @@ class LearnView(QWidget):
             self.session = None
             self.current_card = None
             self.loop_count = 0
+            self.progress_label.setText("No flashcards match your filters")
             self._clear_card_display()
             return
 
@@ -161,7 +150,7 @@ class LearnView(QWidget):
         self._show_next_card()
 
     def answer_current(self, is_correct: bool) -> None:
-        if self.current_card is None:
+        if self.current_card is None or not self.answer_visible:
             return
         self.repository.update_after_answer(
             flashcard_id=int(self.current_card["id"]),
@@ -184,7 +173,10 @@ class LearnView(QWidget):
             return
         self.answer_visible = True
         self.answer_text.setPlainText(self.current_card.get("answer_text", ""))
-        self._display_first_image(self.current_card.get("images", []))
+        self.image_scroll.set_images(self.current_card.get("images", []))
+        self.open_images_button.setEnabled(bool(self.current_card.get("images")))
+        self.correct_button.setEnabled(True)
+        self.wrong_button.setEnabled(True)
         self.show_answer_button.setEnabled(False)
 
     def _show_next_card(self) -> None:
@@ -205,8 +197,8 @@ class LearnView(QWidget):
                 self._clear_card_display()
                 return
 
+        self._clear_card_display()
         self.current_card = next_card
-        self.answer_visible = False
         self.progress_label.setText(
             f"Loop {self.loop_count} • Card {self.session.current_position} / {self.session.total}"
         )
@@ -215,8 +207,6 @@ class LearnView(QWidget):
         )
         self.question_text.setPlainText(next_card.get("question_text", ""))
         self.answer_text.setPlainText("Answer is hidden. Click 'Show answer'.")
-        self.image_label.setText("Answer images are hidden. Click 'Show answer'.")
-        self.image_label.setPixmap(QPixmap())
         self.show_answer_button.setEnabled(True)
 
     def _refresh_loop_session(self) -> bool:
@@ -232,42 +222,42 @@ class LearnView(QWidget):
         self.loop_count += 1
         return True
 
-    def _display_first_image(self, image_paths: list[str]) -> None:
-        if not image_paths:
-            self.image_label.setText("No image")
-            self.image_label.setPixmap(QPixmap())
+    def open_images(self, index: int = 0) -> None:
+        if self.current_card is None or not self.answer_visible:
             return
-
-        first = Path(image_paths[0])
-        if not first.exists():
-            self.image_label.setText("Image not found")
-            self.image_label.setPixmap(QPixmap())
+        paths = self.current_card.get("images", [])
+        if not paths:
             return
+        if self.image_viewer is None:
+            self.image_viewer = ImageViewer(paths, index, self)
+        else:
+            self.image_viewer.set_index(index)
+        self.image_viewer.show()
+        self.image_viewer.raise_()
+        self.image_viewer.activateWindow()
 
-        pixmap = QPixmap(str(first))
-        if pixmap.isNull():
-            self.image_label.setText("Could not load image")
-            self.image_label.setPixmap(QPixmap())
-            return
+    def _close_image_viewer(self) -> None:
+        if self.image_viewer is not None:
+            self.image_viewer.close()
+            self.image_viewer.deleteLater()
+            self.image_viewer = None
 
-        viewport_size = self.image_scroll.viewport().size()
-        scaled = pixmap.scaled(
-            viewport_size,
-            aspectMode=Qt.KeepAspectRatio,
-            mode=Qt.SmoothTransformation,
-        )
-        self.image_label.setPixmap(scaled)
-        self.image_label.setText("")
-
-    def resizeEvent(self, event) -> None:  # type: ignore[override]
-        super().resizeEvent(event)
-        if self.current_card and self.answer_visible:
-            self._display_first_image(self.current_card.get("images", []))
+    def hideEvent(self, event) -> None:
+        self._clear_card_display()
+        self.session = None
+        self.current_card = None
+        self.loop_count = 0
+        self.progress_label.setText("No active session")
+        super().hideEvent(event)
 
     def _clear_card_display(self) -> None:
-        self.card_meta_label.setText("")
+        self._close_image_viewer()
+        self.answer_visible = False
+        self.card_meta_label.clear()
         self.question_text.clear()
         self.answer_text.setPlainText("Answer is hidden. Click 'Show answer'.")
-        self.image_label.setText("Answer images are hidden. Click 'Show answer'.")
-        self.image_label.setPixmap(QPixmap())
+        self.image_scroll.clear_images()
         self.show_answer_button.setEnabled(False)
+        self.open_images_button.setEnabled(False)
+        self.correct_button.setEnabled(False)
+        self.wrong_button.setEnabled(False)

@@ -1,6 +1,3 @@
-from __future__ import annotations
-
-import random
 from typing import Any
 
 from app.data.db import get_connection
@@ -56,14 +53,13 @@ class FlashcardRepository:
             )
             flashcard_id = int(cursor.lastrowid)
 
-            for idx, image_path in enumerate(image_paths):
-                conn.execute(
-                    """
-                    INSERT INTO flashcard_images (flashcard_id, image_path, sort_order)
-                    VALUES (?, ?, ?)
-                    """,
-                    (flashcard_id, image_path, idx),
-                )
+            conn.executemany(
+                """
+                INSERT INTO flashcard_images (flashcard_id, image_path, sort_order)
+                VALUES (?, ?, ?)
+                """,
+                [(flashcard_id, path, idx) for idx, path in enumerate(image_paths)],
+            )
 
             return flashcard_id
 
@@ -132,7 +128,6 @@ class FlashcardRepository:
                 ).fetchall()
                 card["images"] = [r["image_path"] for r in image_rows]
 
-        random.shuffle(cards)
         return cards
 
     def update_after_answer(

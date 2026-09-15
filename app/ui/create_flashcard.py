@@ -1,11 +1,12 @@
-from __future__ import annotations
-
+import shutil
+import sqlite3
 import uuid
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QEvent, QSignalBlocker, Qt, Signal
 from PySide6.QtGui import QImage, QKeySequence
 from PySide6.QtWidgets import (
+    QApplication,
     QComboBox,
     QFileDialog,
     QFormLayout,
@@ -21,7 +22,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from app.data.db import IMAGES_DIR
+from app.data import db
 from app.data.repository import FlashcardRepository
 from app.ui.message_utils import show_info
 
@@ -124,7 +125,18 @@ class CreateFlashcardView(QWidget):
         self.category_input.currentTextChanged.connect(self._refresh_subcategory_options)
 
         self.setFocusPolicy(Qt.StrongFocus)
+        for widget in (self, self.question_input, self.answer_input, self.image_list,
+                       self.category_input.lineEdit(), self.subcategory_input.lineEdit()):
+            widget.installEventFilter(self)
         self.refresh_category_options()
+
+    def eventFilter(self, watched, event) -> bool:
+        if event.type() == QEvent.KeyPress and event.matches(QKeySequence.Paste):
+            mime = QApplication.clipboard().mimeData()
+            if mime and mime.hasImage():
+                self._paste_image_from_clipboard()
+                return True
+        return super().eventFilter(watched, event)
 
     def keyPressEvent(self, event) -> None:  # type: ignore[override]
         if event.matches(QKeySequence.Paste):
@@ -143,16 +155,18 @@ class CreateFlashcardView(QWidget):
             self._add_image_paths(file_paths)
 
     def _add_image_paths(self, file_paths: list[str]) -> None:
+        invalid: list[str] = []
         for path_str in file_paths:
-            path = Path(path_str)
-            if not path.exists() or not path.is_file():
+            path = Path(path_str).resolve()
+            if not path.is_file() or QImage(str(path)).isNull():
+                invalid.append(path.name)
                 continue
             self._image_items.append({"kind": "path", "value": str(path)})
             self.image_list.addItem(QListWidgetItem(f"FILE: {path.name}"))
+        if invalid:
+            QMessageBox.warning(self, "Invalid images", "Could not read these images:\n" + "\n".join(invalid))
 
     def _paste_image_from_clipboard(self) -> None:
-        from PySide6.QtWidgets import QApplication
-
         mime = QApplication.clipboard().mimeData()
         if mime and mime.hasImage():
             image = QApplication.clipboard().image()
@@ -191,42 +205,51 @@ class CreateFlashcardView(QWidget):
             QMessageBox.warning(self, "Missing data", "Answer text is required.")
             return
 
-        IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+        created_paths: list[Path] = []
         saved_paths: list[str] = []
-        for item in self._image_items:
-            unique_name = f"{uuid.uuid4().hex}"
-            if item["kind"] == "path":
-                src = Path(item["value"])
-                suffix = src.suffix or ".png"
-                dst = IMAGES_DIR / f"{unique_name}{suffix}"
-                try:
-                    dst.write_bytes(src.read_bytes())
-                    saved_paths.append(dst.as_posix())
-                except OSError:
-                    continue
-            elif item["kind"] == "qimage":
-                dst = IMAGES_DIR / f"{unique_name}.png"
-                image: QImage = item["value"]
-                if image.save(str(dst), "PNG"):
-                    saved_paths.append(dst.as_posix())
+        try:
+            db.IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+            for item in self._image_items:
+                unique_name = uuid.uuid4().hex
+                suffix = Path(item["value"]).suffix if item["kind"] == "path" else ".png"
+                dst = db.IMAGES_DIR / f"{unique_name}{suffix or '.png'}"
+                # Include partial copies in cleanup if an operation fails midway.
+                created_paths.append(dst)
+                if item["kind"] == "path":
+                    shutil.copyfile(item["value"], dst)
+                    if QImage(str(dst)).isNull():
+                        raise OSError(f"Image is no longer readable: {Path(item['value']).name}")
+                elif not item["value"].save(str(dst), "PNG"):
+                    raise OSError("Could not save a pasted image.")
+                saved_paths.append(dst.relative_to(db.PROJECT_ROOT).as_posix())
 
-        self.repository.create_flashcard(
-            category=category,
-            subcategory=subcategory,
-            tier=tier,
-            question_text=question_text,
-            answer_text=answer_text,
-            image_paths=saved_paths,
-        )
+            self.repository.create_flashcard(
+                category=category,
+                subcategory=subcategory,
+                tier=tier,
+                question_text=question_text,
+                answer_text=answer_text,
+                image_paths=saved_paths,
+            )
+        except (OSError, sqlite3.Error) as error:
+            cleanup_errors = []
+            for path in created_paths:
+                try:
+                    path.unlink(missing_ok=True)
+                except OSError:
+                    cleanup_errors.append(str(path))
+            message = f"Flashcard was not saved. Your entries have been kept.\n\n{error}"
+            if cleanup_errors:
+                message += "\n\nCould not remove temporary image files:\n" + "\n".join(cleanup_errors)
+            QMessageBox.warning(self, "Save failed", message)
+            return
 
         show_info(self, "Saved", "Flashcard saved successfully.")
         self._reset_form()
         self.refresh_category_options()
 
     def _reset_form(self) -> None:
-        self.category_input.setCurrentText("")
-        self.subcategory_input.setCurrentText("")
-        self.tier_input.setValue(1)
+        # Keep the classification fields for creating more cards in the same group.
         self.question_input.clear()
         self.answer_input.clear()
         self.image_list.clear()
@@ -235,19 +258,18 @@ class CreateFlashcardView(QWidget):
     def refresh_category_options(self) -> None:
         current_category = self.category_input.currentText()
         categories = self.repository.get_categories()
-        self.category_input.blockSignals(True)
-        self.category_input.clear()
-        self.category_input.addItems(categories)
-        self.category_input.setCurrentText(current_category)
-        self.category_input.blockSignals(False)
+        with QSignalBlocker(self.category_input):
+            self.category_input.clear()
+            self.category_input.addItems(categories)
+            self.category_input.setCurrentText(current_category)
+
         self._refresh_subcategory_options()
 
     def _refresh_subcategory_options(self) -> None:
         selected_category = self.category_input.currentText().strip()
         current_subcategory = self.subcategory_input.currentText()
         subcategories = self.repository.get_subcategories(selected_category or None)
-        self.subcategory_input.blockSignals(True)
-        self.subcategory_input.clear()
-        self.subcategory_input.addItems(subcategories)
-        self.subcategory_input.setCurrentText(current_subcategory)
-        self.subcategory_input.blockSignals(False)
+        with QSignalBlocker(self.subcategory_input):
+            self.subcategory_input.clear()
+            self.subcategory_input.addItems(subcategories)
+            self.subcategory_input.setCurrentText(current_subcategory)

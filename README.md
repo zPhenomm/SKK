@@ -39,29 +39,63 @@ A lightweight desktop flashcard app built with **PySide6 + SQLite**.
 
 ## Tech stack
 
-- Python 3.10+
+- Python 3.14
 - PySide6 (UI)
 - SQLite (local DB)
 
 ## Setup
 
-1. Create & activate a virtual environment (recommended)
-2. Install dependencies:
+From the project folder in PowerShell, create a Python 3.14 environment:
 
-```bash
-pip install -r requirements.txt
+```powershell
+py -3.14 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
 ## Run
 
-```bash
-python -m app.main
+```powershell
+.\.venv\Scripts\python.exe -m app.main
 ```
 
-On first launch, the app creates:
+From another working directory, use the full path to `.venv\Scripts\python.exe`
+with `-c "from app.main import main; main()"` and set `PYTHONPATH` to this project
+folder first. Data is always read from the project folder, independent of the
+working directory.
+
+On first launch, the app creates these paths inside the project folder:
 
 - `data/flashcards.db`
 - `data/images/`
+
+## Answer images and learning
+
+- Reveal the answer before grading it Correct or Wrong.
+- All attached images appear in a horizontal strip; scroll sideways to see more.
+- Click **Open images** to start at the first image, or click a preview to open it.
+- The separate viewer supports Previous/Next, Left/Right arrow keys, Fit, 100%,
+  and zoom in/out in 25 percentage-point steps (10–400%). Enlarged images have scrollbars.
+- Moving to another card or leaving learning closes the viewer and hides images.
+- Failed saves keep your form entries and remove images created by that attempt.
+- Saving a card keeps its category, subcategory, and tier selected for the next card.
+
+## Tests
+
+```powershell
+.\.venv\Scripts\python.exe -m unittest discover -s tests -v
+```
+
+Tests use temporary databases and images. Qt tests run offscreen by default.
+Set `$env:QT_QPA_PLATFORM = "windows"` to exercise visible windows instead.
+
+To try the image features with temporary example cards:
+
+```powershell
+.\.venv\Scripts\python.exe -m tests.preview_demo
+```
+
+Add `--smoke` to run the viewer checks automatically and save screenshots to
+`build/ui-check/`. The demo leaves your study database untouched.
 
 ## Notes
 

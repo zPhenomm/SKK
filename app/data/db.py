@@ -1,10 +1,11 @@
-from __future__ import annotations
-
 import sqlite3
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 
-DATA_DIR = Path("data")
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+DATA_DIR = PROJECT_ROOT / "data"
 IMAGES_DIR = DATA_DIR / "images"
 DB_PATH = DATA_DIR / "flashcards.db"
 
@@ -14,12 +15,22 @@ def ensure_data_dirs() -> None:
     IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def get_connection() -> sqlite3.Connection:
+def resolve_image_path(image_path: str) -> Path:
+    path = Path(image_path)
+    return path if path.is_absolute() else PROJECT_ROOT / path
+
+
+@contextmanager
+def get_connection() -> Iterator[sqlite3.Connection]:
     ensure_data_dirs()
     conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON;")
-    return conn
+    try:
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON;")
+        with conn:
+            yield conn
+    finally:
+        conn.close()
 
 
 def initialize_database() -> None:
