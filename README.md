@@ -101,6 +101,19 @@ To try the image features with temporary example cards:
 Add `--smoke` to run the viewer checks automatically and save screenshots to
 `build/ui-check/`. The demo leaves your study database untouched.
 
+## Distribute
+
+To build a self contained Windows .exe of the app, install pyinstaller into the project venv:
+```powershell
+.\.venv\Scripts\python.exe -m pip install --upgrade pyinstaller
+```
+Build the release folder:
+```powershell
+.\.venv\Scripts\python.exe -m PyInstaller --clean --onedir --windowed --name FlashcardStudy --paths . app/main.py
+```
+
+Deliver the release folder to the end user, existing databases can be copied into its root as /data
+
 ## Notes
 
 - This is designed for **personal/local use**.
