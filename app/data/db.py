@@ -1,10 +1,16 @@
 import sqlite3
+import sys
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+# Persistent user data lives beside the EXE, outside PyInstaller's _internal.
+PROJECT_ROOT = (
+    Path(sys.executable).resolve().parent
+    if getattr(sys, "frozen", False)
+    else Path(__file__).resolve().parents[2]
+)
 DATA_DIR = PROJECT_ROOT / "data"
 IMAGES_DIR = DATA_DIR / "images"
 DB_PATH = DATA_DIR / "flashcards.db"
