@@ -3,6 +3,7 @@ from typing import Any
 from PySide6.QtCore import QSignalBlocker
 from PySide6.QtWidgets import (
     QComboBox,
+    QDialog,
     QFormLayout,
     QHBoxLayout,
     QLabel,
@@ -14,6 +15,7 @@ from PySide6.QtWidgets import (
 
 from app.data.repository import FlashcardRepository
 from app.services.learning import LearningSession
+from app.ui.edit_flashcard import EditFlashcardDialog
 from app.ui.message_utils import show_info
 from app.ui.image_viewer import ImagePreviewStrip, ImageViewer
 
@@ -84,9 +86,11 @@ class LearnView(QWidget):
         self.show_answer_button = QPushButton("Show answer")
         self.correct_button = QPushButton("Correct")
         self.wrong_button = QPushButton("Wrong")
+        self.edit_button = QPushButton("Edit card")
         answer_actions.addWidget(self.show_answer_button)
         answer_actions.addWidget(self.correct_button)
         answer_actions.addWidget(self.wrong_button)
+        answer_actions.addWidget(self.edit_button)
         root.addLayout(answer_actions)
 
         self.setLayout(root)
@@ -94,6 +98,7 @@ class LearnView(QWidget):
         self.start_button.clicked.connect(self.start_learning)
         self.refresh_button.clicked.connect(self.populate_filters)
         self.show_answer_button.clicked.connect(self.show_answer)
+        self.edit_button.clicked.connect(self.edit_current_card)
         self.correct_button.clicked.connect(lambda: self.answer_current(True))
         self.wrong_button.clicked.connect(lambda: self.answer_current(False))
         self.category_combo.currentIndexChanged.connect(self._on_category_changed)
@@ -168,6 +173,16 @@ class LearnView(QWidget):
             1, self.repository.get_setting_int("tier_down_threshold", 1)
         )
 
+    def edit_current_card(self) -> None:
+        if self.current_card is None:
+            return
+        dialog = EditFlashcardDialog(self.repository, self.current_card, self)
+        if dialog.exec() == QDialog.Accepted:
+            self.question_text.setPlainText(self.current_card.get("question_text", ""))
+            if self.answer_visible:
+                self.answer_text.setPlainText(self.current_card.get("answer_text", ""))
+        dialog.deleteLater()
+
     def show_answer(self) -> None:
         if self.current_card is None:
             return
@@ -208,6 +223,7 @@ class LearnView(QWidget):
         self.question_text.setPlainText(next_card.get("question_text", ""))
         self.answer_text.setPlainText("Answer is hidden. Click 'Show answer'.")
         self.show_answer_button.setEnabled(True)
+        self.edit_button.setEnabled(True)
 
     def _refresh_loop_session(self) -> bool:
         cards = self.repository.get_filtered_flashcards(
@@ -258,6 +274,7 @@ class LearnView(QWidget):
         self.answer_text.setPlainText("Answer is hidden. Click 'Show answer'.")
         self.image_scroll.clear_images()
         self.show_answer_button.setEnabled(False)
+        self.edit_button.setEnabled(False)
         self.open_images_button.setEnabled(False)
         self.correct_button.setEnabled(False)
         self.wrong_button.setEnabled(False)

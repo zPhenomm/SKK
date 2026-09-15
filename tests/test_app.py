@@ -11,16 +11,17 @@ from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QEvent, QMimeData, Qt
+from PySide6.QtCore import QEvent, QMimeData, Qt, QTimer
 from PySide6.QtGui import QImage
 from PySide6.QtTest import QTest, QSignalSpy
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QDialogButtonBox
 
 from app.data import db
 from app.data.repository import FlashcardRepository
 from app.main import MainWindow
 from app.services.learning import LearningSession
 from app.ui.create_flashcard import CreateFlashcardView
+from app.ui.edit_flashcard import EditFlashcardDialog
 from app.ui.image_viewer import ImageViewer
 from app.ui.learn import LearnView
 from app.ui.view_cards import ViewCardsView
@@ -316,6 +317,94 @@ class GuiTests(DatabaseFixture):
         self.assertFalse(viewer.isVisible())
         self.assertIsNone(learn.current_card)
 
+    def test_edit_during_learning_preserves_session_and_reveal_state(self):
+        paths = [str(self.image())]
+        card_id = self.card(tier=3, images=paths)
+        self.repo.update_after_answer(card_id, True)
+        before = self.state(card_id)
+        learn = self.widget(LearnView(self.repo))
+        self.assertFalse(learn.edit_button.isEnabled())
+        learn.start_learning()
+        session = learn.session
+        progress = learn.progress_label.text()
+
+        for revealed in (False, True):
+            if revealed:
+                learn.show_answer()
+
+            def save_dialog():
+                dialog = self.app.activeModalWidget()
+                dialog.question_input.setPlainText(f"Corrected question {revealed}")
+                dialog.answer_input.setPlainText(f"Corrected answer {revealed}")
+                dialog.buttons.button(QDialogButtonBox.Save).click()
+
+            QTimer.singleShot(0, save_dialog)
+            learn.edit_button.click()
+            self.assertIs(learn.session, session)
+            self.assertEqual(learn.progress_label.text(), progress)
+            self.assertEqual(learn.current_card["id"], card_id)
+            self.assertEqual(learn.question_text.toPlainText(), f"Corrected question {revealed}")
+            self.assertEqual(learn.answer_visible, revealed)
+            self.assertEqual(learn.correct_button.isEnabled(), revealed)
+            self.assertEqual(learn.wrong_button.isEnabled(), revealed)
+            self.assertEqual(learn.show_answer_button.isEnabled(), not revealed)
+            if revealed:
+                self.assertEqual(learn.answer_text.toPlainText(), "Corrected answer True")
+            else:
+                self.assertIn("Answer is hidden", learn.answer_text.toPlainText())
+            saved = self.state(card_id)
+            for key in before.keys() - {"question_text", "answer_text"}:
+                self.assertEqual(saved[key], before[key])
+            self.assertEqual(saved["answer_text"], f"Corrected answer {revealed}")
+            self.assertEqual(self.repo.get_filtered_flashcards(None, None, None)[0]["images"], paths)
+
+        learn.answer_current(True)
+        self.assertEqual(learn.loop_count, 2)
+        self.assertEqual(learn.question_text.toPlainText(), "Corrected question True")
+        self.assertEqual(self.state(card_id)["times_correct"], before["times_correct"] + 1)
+        learn.hide()
+        self.assertFalse(learn.edit_button.isEnabled())
+
+    def test_edit_cancel_validation_and_save_failure(self):
+        card_id = self.card()
+        learn = self.widget(LearnView(self.repo))
+        learn.start_learning()
+        before = self.state(card_id)
+
+        for cancel in ("button", "escape", "close"):
+            def cancel_dialog():
+                dialog = self.app.activeModalWidget()
+                dialog.question_input.setPlainText("Discard this")
+                if cancel == "button":
+                    dialog.buttons.button(QDialogButtonBox.Cancel).click()
+                elif cancel == "escape":
+                    QTest.keyClick(dialog, Qt.Key_Escape)
+                else:
+                    dialog.close()
+
+            QTimer.singleShot(0, cancel_dialog)
+            learn.edit_button.click()
+            self.assertEqual(self.state(card_id), before)
+            self.assertEqual(learn.question_text.toPlainText(), "Question")
+
+        dialog = self.widget(EditFlashcardDialog(self.repo, learn.current_card, learn))
+        for field in (dialog.question_input, dialog.answer_input):
+            field.setPlainText("  ")
+            dialog.buttons.button(QDialogButtonBox.Save).click()
+            self.assertTrue(dialog.isVisible())
+            self.assertEqual(self.state(card_id), before)
+            field.setPlainText("Correction")
+
+        with patch.object(self.repo, "update_flashcard", side_effect=sqlite3.OperationalError("locked")):
+            dialog.buttons.button(QDialogButtonBox.Save).click()
+        self.assertTrue(dialog.isVisible())
+        self.assertEqual(dialog.answer_input.toPlainText(), "Correction")
+        self.assertEqual(learn.current_card["answer_text"], "Answer")
+        self.assertEqual(self.state(card_id), before)
+        dialog.buttons.button(QDialogButtonBox.Save).click()
+        self.assertFalse(dialog.isVisible())
+        self.assertEqual(self.state(card_id)["answer_text"], "Correction")
+
     def test_tier_filter_exhaustion(self):
         self.card()
         self.repo.set_setting_int("tier_up_threshold", 1)
@@ -328,6 +417,8 @@ class GuiTests(DatabaseFixture):
         self.assertIsNone(learn.session)
         self.assertIn("No matching cards", learn.progress_label.text())
         self.assertFalse(learn.correct_button.isEnabled())
+
+        self.assertFalse(learn.edit_button.isEnabled())
 
     def test_viewer_navigation_zoom_resize_and_missing_images(self):
         paths = [str(self.image()), str(self.root / "missing.png"), str(self.image("portrait.png", 900, 1600))]

@@ -22,6 +22,7 @@ A lightweight desktop flashcard app built with **PySide6 + SQLite**.
   - Shows question first
   - "Show answer" button reveals answer text + answer images
   - Correct/Wrong buttons
+  - Edit card button to correct question and answer text without leaving learning
   - Tier progression logic:
     - Correct streak threshold -> tier up
     - Wrong streak threshold -> tier down
@@ -71,6 +72,9 @@ On first launch, the app creates these paths inside the project folder:
 ## Answer images and learning
 
 - Reveal the answer before grading it Correct or Wrong.
+- **Edit card** opens the current question and answer for correction. Save applies
+  changes immediately; Cancel or Escape discards them. Editing keeps your place,
+  answer reveal state, attached images, tier, and learning history.
 - All attached images appear in a horizontal strip; scroll sideways to see more.
 - Click **Open images** to start at the first image, or click a preview to open it.
 - The separate viewer supports Previous/Next, Left/Right arrow keys, Fit, 100%,
